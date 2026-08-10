@@ -26,13 +26,326 @@ class HardwareStoreApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF8F9FA),
       ),
-      home: const MainNavigationScreen(),
+      home: const AuthWrapper(),
+    );
+  }
+}
+
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _isLoading = true;
+  bool _isFirstTime = true;
+  String _savedName = '';
+  String _savedPin = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthStatus();
+  }
+
+  Future<File> _getFile(String filename) async {
+    final directory = await getApplicationDocumentsDirectory();
+    return File('${directory.path}/$filename');
+  }
+
+  Future<void> _checkAuthStatus() async {
+    try {
+      final userFile = await _getFile('smart_duka_user.json');
+      if (await userFile.exists()) {
+        final content = await userFile.readAsString();
+        final data = jsonDecode(content);
+        setState(() {
+          _savedName = data['name'] ?? '';
+          _savedPin = data['pin'] ?? '';
+          _isFirstTime = _savedPin.isEmpty;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error checking auth status: $e");
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _onSetupComplete(String name, String pin) async {
+    try {
+      final userFile = await _getFile('smart_duka_user.json');
+      await userFile.writeAsString(jsonEncode({'name': name, 'pin': pin}));
+      setState(() {
+        _savedName = name;
+        _savedPin = pin;
+        _isFirstTime = false;
+      });
+    } catch (e) {
+      debugPrint("Error saving user profile: $e");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_isFirstTime) {
+      return SetupScreen(onComplete: _onSetupComplete);
+    }
+
+    return LoginScreen(
+      userName: _savedName,
+      correctPin: _savedPin,
+      onSuccess: () {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => MainNavigationScreen(userName: _savedName),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class SetupScreen extends StatefulWidget {
+  final Function(String name, String pin) onComplete;
+
+  const SetupScreen({super.key, required this.onComplete});
+
+  @override
+  State<SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<SetupScreen> {
+  final _nameController = TextEditingController();
+  final _pinController = TextEditingController();
+  final _confirmPinController = TextEditingController();
+  String? _errorMessage;
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    final pin = _pinController.text.trim();
+    final confirmPin = _confirmPinController.text.trim();
+
+    if (name.isEmpty || pin.isEmpty || confirmPin.isEmpty) {
+      setState(() {
+        _errorMessage = "Tafadhali jaza nafasi zote!";
+      });
+      return;
+    }
+
+    if (pin.length < 4) {
+      setState(() {
+        _errorMessage = "PIN lazima iwe na angalau tarakimu 4!";
+      });
+      return;
+    }
+
+    if (pin != confirmPin) {
+      setState(() {
+        _errorMessage = "PIN hazifanani!";
+      });
+      return;
+    }
+
+    widget.onComplete(name, pin);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.storefront, size: 70, color: Colors.indigo),
+                  const SizedBox(height: 15),
+                  const Text(
+                    "Seti Akaunti ya Mwenye Duka",
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Tengeneza PIN itakayolinda mfumo wako wa duka.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 25),
+                  if (_errorMessage != null) ...[
+                    Text(_errorMessage!,
+                        style: const TextStyle(
+                            color: Colors.red, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                  ],
+                  TextField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Jina Lako / Jina la Mwenye Duka',
+                      prefixIcon: Icon(Icons.person),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: _pinController,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Tengeneza PIN (Tarakimu 4+)',
+                      prefixIcon: Icon(Icons.lock),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: _confirmPinController,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Thibitisha PIN (Confirm PIN)',
+                      prefixIcon: Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: _submit,
+                      child: const Text("HIFADHI & ANZA MFUMO",
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  final String userName;
+  final String correctPin;
+  final VoidCallback onSuccess;
+
+  const LoginScreen({
+    super.key,
+    required this.userName,
+    required this.correctPin,
+    required this.onSuccess,
+  });
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _pinController = TextEditingController();
+  String? _errorMsg;
+
+  void _verifyPin() {
+    if (_pinController.text.trim() == widget.correctPin) {
+      widget.onSuccess();
+    } else {
+      setState(() {
+        _errorMsg = "PIN sio sahihi! Jaribu tena.";
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock_person, size: 80, color: Colors.indigo),
+                  const SizedBox(height: 15),
+                  Text(
+                    "Welcome, ${widget.userName}!",
+                    style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text("Ingiza PIN yako ili kufungua mfumo"),
+                  const SizedBox(height: 25),
+                  if (_errorMsg != null) ...[
+                    Text(_errorMsg!,
+                        style: const TextStyle(
+                            color: Colors.red, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                  ],
+                  SizedBox(
+                    width: 250,
+                    child: TextField(
+                      controller: _pinController,
+                      obscureText: true,
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 22, letterSpacing: 8),
+                      decoration: const InputDecoration(
+                        hintText: 'PIN',
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _verifyPin(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 40, vertical: 12),
+                    ),
+                    onPressed: _verifyPin,
+                    child: const Text("INGIA DUKANI",
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final String userName;
+
+  const MainNavigationScreen({super.key, required this.userName});
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -50,13 +363,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _loadDataFromDisk();
   }
 
-  // Kupata eneo rasmi la Hifadhi la PC/Simu
   Future<File> _getFile(String filename) async {
     final directory = await getApplicationDocumentsDirectory();
     return File('${directory.path}/$filename');
   }
 
-  // Kupakia Data zilizohifadhiwa kwenye Disk
   Future<void> _loadDataFromDisk() async {
     try {
       final productsFile = await _getFile('smart_duka_products.json');
@@ -92,7 +403,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
-  // Kuhifadhi Data Moja kwa Moja kwenye Hard Drive/Storage
   Future<void> _saveDataToDisk() async {
     try {
       final productsFile = await _getFile('smart_duka_products.json');
@@ -129,6 +439,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     final screens = [
       DashboardScreen(
+        userName: widget.userName,
         products: _allProducts,
         salesLog: _salesLog,
         onDataChanged: () {
@@ -156,12 +467,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 class DashboardScreen extends StatefulWidget {
+  final String userName;
   final List<Map<String, dynamic>> products;
   final List<Map<String, dynamic>> salesLog;
   final VoidCallback onDataChanged;
 
   const DashboardScreen({
     super.key,
+    required this.userName,
     required this.products,
     required this.salesLog,
     required this.onDataChanged,
@@ -227,6 +540,170 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showEditProductModal(Map<String, dynamic> product) {
+    final nameCtrl = TextEditingController(text: product['name']);
+    final kwCtrl = TextEditingController(text: product['keywords'] ?? '');
+    final sellCtrl =
+        TextEditingController(text: product['sell_price'].toString());
+    final stockCtrl = TextEditingController(text: product['stock'].toString());
+    final locCtrl = TextEditingController(text: product['location'] ?? '');
+    Uint8List? selectedImageBytes = product['image'] as Uint8List?;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            top: 20,
+            left: 20,
+            right: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Badili Taarifa / Bei ya Bidhaa",
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 15),
+                Center(
+                  child: GestureDetectingAvatar(
+                    imageBytes: selectedImageBytes,
+                    onTap: () async {
+                      final ImagePicker picker = ImagePicker();
+                      final XFile? image =
+                          await picker.pickImage(source: ImageSource.gallery);
+                      if (image != null) {
+                        final bytes = await image.readAsBytes();
+                        setModalState(() {
+                          selectedImageBytes = bytes;
+                        });
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Jina la Bidhaa',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: kwCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Keywords / Aliases',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: sellCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Bei ya Kuuza (Tsh)',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                        child: TextField(
+                            controller: stockCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Stoki Iliyopo',
+                                border: OutlineInputBorder()))),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: TextField(
+                            controller: locCtrl,
+                            decoration: const InputDecoration(
+                                labelText: 'Shelfi / Eneo',
+                                border: OutlineInputBorder()))),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white),
+                    onPressed: () {
+                      if (nameCtrl.text.isNotEmpty &&
+                          sellCtrl.text.isNotEmpty) {
+                        setState(() {
+                          product['name'] = nameCtrl.text;
+                          product['keywords'] = kwCtrl.text;
+                          product['sell_price'] =
+                              double.tryParse(sellCtrl.text) ?? 0.0;
+                          product['stock'] = int.tryParse(stockCtrl.text) ?? 0;
+                          product['location'] = locCtrl.text;
+                          product['image'] = selectedImageBytes;
+                          _filterProducts(_searchController.text);
+                        });
+                        widget.onDataChanged();
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text("✅ Taarifa za bidhaa zimebadilishwa!"),
+                              backgroundColor: Colors.green),
+                        );
+                      }
+                    },
+                    child: const Text("HIFADHI MABADILIKO",
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteProduct(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text("Thibitisha Kufuta"),
+        content: Text(
+            "Je, una uhakika unataka kufuta bidhaa ya '${product['name']}' kwenye mfumo?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text("Kughairi")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () {
+              setState(() {
+                widget.products
+                    .removeWhere((item) => item['id'] == product['id']);
+                _filterProducts(_searchController.text);
+              });
+              widget.onDataChanged();
+              Navigator.pop(dialogCtx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text("🗑️ Bidhaa imefutwa kikamilifu!"),
+                    backgroundColor: Colors.red),
+              );
+            },
+            child: const Text("FUTA BIDHAA"),
+          ),
+        ],
       ),
     );
   }
@@ -471,9 +948,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.indigo,
-        title: Text("Smart Hardware POS (${widget.products.length})",
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Karibu, ${widget.userName} 👋",
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
+            Text("Stoki na Bidhaa (${widget.products.length})",
+                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add_circle, color: Colors.white, size: 28),
@@ -561,7 +1047,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   )
                                 ],
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(Icons.edit,
+                                    color: Colors.orange, size: 20),
+                                tooltip: 'Badili Bei / Taarifa',
+                                onPressed: () => _showEditProductModal(p),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete,
+                                    color: Colors.red, size: 20),
+                                tooltip: 'Futa Bidhaa',
+                                onPressed: () => _confirmDeleteProduct(p),
+                              ),
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.indigo,
