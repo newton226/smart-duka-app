@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,8 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,17 +40,101 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+  List<Map<String, dynamic>> _allProducts = [];
+  List<Map<String, dynamic>> _salesLog = [];
+  bool _isLoading = true;
 
-  final List<Map<String, dynamic>> _allProducts = [];
-  final List<Map<String, dynamic>> _salesLog = [];
+  @override
+  void initState() {
+    super.initState();
+    _loadDataFromDisk();
+  }
+
+  // Kupata eneo rasmi la Hifadhi la PC/Simu
+  Future<File> _getFile(String filename) async {
+    final directory = await getApplicationDocumentsDirectory();
+    return File('${directory.path}/$filename');
+  }
+
+  // Kupakia Data zilizohifadhiwa kwenye Disk
+  Future<void> _loadDataFromDisk() async {
+    try {
+      final productsFile = await _getFile('smart_duka_products.json');
+      final salesFile = await _getFile('smart_duka_sales.json');
+
+      if (await productsFile.exists()) {
+        final String productsContent = await productsFile.readAsString();
+        final List<dynamic> decoded = jsonDecode(productsContent);
+        _allProducts = decoded.map((e) {
+          final map = Map<String, dynamic>.from(e);
+          if (map['image'] != null) {
+            map['image'] = base64Decode(map['image']);
+          }
+          return map;
+        }).toList();
+      }
+
+      if (await salesFile.exists()) {
+        final String salesContent = await salesFile.readAsString();
+        final List<dynamic> decoded = jsonDecode(salesContent);
+        _salesLog = decoded.map((e) {
+          final map = Map<String, dynamic>.from(e);
+          map['date'] = DateTime.parse(map['date']);
+          return map;
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint("Error loading data: $e");
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Kuhifadhi Data Moja kwa Moja kwenye Hard Drive/Storage
+  Future<void> _saveDataToDisk() async {
+    try {
+      final productsFile = await _getFile('smart_duka_products.json');
+      final salesFile = await _getFile('smart_duka_sales.json');
+
+      final productsToSave = _allProducts.map((p) {
+        final map = Map<String, dynamic>.from(p);
+        if (map['image'] != null) {
+          map['image'] = base64Encode(map['image'] as Uint8List);
+        }
+        return map;
+      }).toList();
+
+      final salesToSave = _salesLog.map((s) {
+        final map = Map<String, dynamic>.from(s);
+        map['date'] = (map['date'] as DateTime).toIso8601String();
+        return map;
+      }).toList();
+
+      await productsFile.writeAsString(jsonEncode(productsToSave));
+      await salesFile.writeAsString(jsonEncode(salesToSave));
+    } catch (e) {
+      debugPrint("Error saving data: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final screens = [
       DashboardScreen(
         products: _allProducts,
         salesLog: _salesLog,
-        onDataChanged: () => setState(() {}),
+        onDataChanged: () {
+          _saveDataToDisk();
+          setState(() {});
+        },
       ),
       SalesReportScreen(salesLog: _salesLog),
     ];
@@ -594,7 +677,6 @@ class SalesReportScreen extends StatelessWidget {
       ),
     );
 
-    // Njia hii inafungua Mfumo wa Print/Save wa kifaa moja kwa moja (Android, Windows, Web)
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
       name: 'Ripoti_ya_Mauzo_${DateTime.now().day}_${DateTime.now().month}.pdf',
